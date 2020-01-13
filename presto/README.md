@@ -28,12 +28,14 @@ Presto cluster overview webpage is available at [localhost:8080](http://localhos
 
 ## Custom build
 
-To build a container using RPM and CLI that are not publicly downloadable from the Internet run:
+To build a container using RPM and CLI artifacts that are not publicly downloadable from the
+Internet download the RPM and CLI in the `installdir` directory. Both should have the following
+naming format in order to be recognized by the `build-image.sh` script:
+`presto-server-rpm-${PRESTO_VERSION}.x86_64.rpm` and
+`presto-cli-${PRESTO_VERSION}-executable.jar`.
+
 ```bash
-presto_rpm=<location of presto-server-rpm fil>
-presto_cli=<location of presto-cli executable jar>
-presto_version=<presto version>
-./build-image.sh --rpm "${presto_rpm}" --cli "${presto_cli}" --version "${presto_version}"
+./build-image.sh --version "${PRESTO-VERSION}"
 ```
 
 ## Custom build (incremetal) FOR DEVELOPMENT PURPOSES ONLY

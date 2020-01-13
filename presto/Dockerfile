@@ -1,30 +1,25 @@
 FROM centos:7.5.1804
 LABEL maintainer="https://www.starburstdata.com/"
 
-ARG presto_version=323-e.3
-ARG dist_location=""
+ARG presto_rpm
+ARG presto_cli
+ARG artifacts_dir="installdir"
 
 RUN yum -y install java-11-openjdk less && \
     yum clean all && \
     rm -rf /var/cache/yum && \
     echo OK
 
-COPY ./installdir /installdir
+COPY ./$artifacts_dir /$artifacts_dir
 
 RUN set -xeu && \
-    dist="$(/installdir/find-dist-location.sh "${dist_location}" "${presto_version}")" && \
-    yum -y localinstall "${dist}/presto-server-rpm-${presto_version}.x86_64.rpm" && \
+    yum -y install "/${artifacts_dir}/${presto_rpm}" && \
     rpm -qa | grep -q presto-server && \
-    cli_location="${dist}/presto-cli-${presto_version}-executable.jar" && \
-    if test -f "${cli_location}"; then \
-        cp -a "${cli_location}" /usr/local/bin/presto-cli; \
-    else \
-        curl -fsSL "${cli_location}" -o /usr/local/bin/presto-cli; \
-    fi && \
+    cp -a "/${artifacts_dir}/${presto_cli}" /usr/local/bin/presto-cli; \
     chmod -v +x /usr/local/bin/presto-cli && \
     ln -vs /usr/local/bin/presto-cli / `# backwards compatibility ` && \
     yum clean all && \
-    rm -vr /installdir && \
+    rm -vr /"${artifacts_dir}" && \
     echo OK
 
 COPY etc /usr/lib/presto/etc

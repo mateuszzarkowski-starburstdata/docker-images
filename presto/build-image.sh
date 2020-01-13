@@ -10,16 +10,16 @@ function usage()
 {
   echo "\
 `cmd` [OPTIONS...]
--r, --rpm; Set presto server RPM file location
--c, --cli; Set presto CLI executable jar location
 -v, --version; Set presto version
 -i, --incremental; Allow incremetal build
+-c, --clean; Clean artifacts directory with downloaded RPM and CLI
 " | column -t -s ";"
 }
 
 INCREMETAL=false
+CLEAN=false
 
-options=$(getopt -o r:c:v:i --long rpm:,cli:,version:,incremental -n 'parse-options' -- "$@")
+options=$(getopt -o v:ic --long version:,incremental,cleanup -n 'parse-options' -- "$@")
 
 if [ $? != 0 ]; then
   echo "Failed parsing options." >&2
@@ -28,27 +28,14 @@ fi
 
 while true; do
   case "$1" in
-    -r | --rpm ) PRESTO_RPM=$2; shift 2 ;;
-    -c | --cli ) PRESTO_CLI=$2; shift 2 ;;
     -v | --version ) PRESTO_VERSION=$2; shift 2;;
     -i | --incremental) INCREMETAL=true; shift ;;
+    -c | --cleanup) CLEAN=true; shift ;;
     -- ) shift; break ;;
     "" ) break ;;
     * ) echo "Unknown option provided ${1}"; usage; exit 1; ;;
   esac
 done
-
-if [ -z "${PRESTO_RPM}" ]; then
-  echo "-r/--rpm option is missing"
-  usage
-  exit 1
-fi
-
-if [ -z "${PRESTO_CLI}" ]; then
-  echo "-c/--cli option is missing"
-  usage
-  exit 1
-fi
 
 if [ -z "${PRESTO_VERSION}" ]; then
   echo "-v/--version option is missing"
@@ -58,33 +45,50 @@ fi
 
 set -xeuo pipefail
 
-PRESTO_RPM_BASENAME=$(basename $PRESTO_RPM)
-PRESTO_CLI_BASENAME=$(basename $PRESTO_CLI)
+ARTIFACTS_DIR="installdir"
+
+PRESTO_RPM_BASENAME="presto-server-rpm-${PRESTO_VERSION}.x86_64.rpm"
+PRESTO_CLI_BASENAME="presto-cli-${PRESTO_VERSION}-executable.jar"
+
+DIST_LOCATION="$(${ARTIFACTS_DIR}/find-dist-location.sh "" "${PRESTO_VERSION}")"
+PRESTO_RPM="${DIST_LOCATION}/${PRESTO_RPM_BASENAME}"
+PRESTO_CLI="${DIST_LOCATION}/${PRESTO_CLI_BASENAME}"
+
 
 function cleanup {
-  rm -f "installdir/${PRESTO_RPM_BASENAME}"
-  rm -f "installdir/${PRESTO_CLI_BASENAME}"
+  rm -f "${ARTIFACTS_DIR}/${PRESTO_RPM_BASENAME}"
+  rm -f "${ARTIFACTS_DIR}/${PRESTO_CLI_BASENAME}"
 }
-trap cleanup EXIT
 
-cp "${PRESTO_RPM}" installdir
-cp "${PRESTO_CLI}" installdir
+if [ "$CLEAN" = true ] ; then
+    trap cleanup EXIT
+fi
+
+if [ ! -f "${ARTIFACTS_DIR}/${PRESTO_RPM_BASENAME}" ]; then
+    curl -fsSL "${PRESTO_RPM}" -o "${ARTIFACTS_DIR}/${PRESTO_RPM_BASENAME}"
+fi
+
+if [ ! -f "${ARTIFACTS_DIR}/${PRESTO_CLI_BASENAME}" ]; then
+    curl -fsSL "${PRESTO_CLI}" -o "${ARTIFACTS_DIR}/${PRESTO_CLI_BASENAME}"
+fi
 
 IMAGE_NAME=starburstdata/presto:${PRESTO_VERSION}
 
 if [ "${INCREMETAL}" = true ] && [[ $(docker image list -q ${IMAGE_NAME}) ]]; then
   echo "Running incremetal build..."
   docker build . \
-    --build-arg "presto_version=${PRESTO_VERSION}" \
+    --build-arg "presto_rpm=${PRESTO_RPM_BASENAME}" \
+    --build-arg "presto_cli=${PRESTO_CLI_BASENAME}" \
+    --build-arg "artifacts_dir=${ARTIFACTS_DIR}" \
     --build-arg "BASE_IMAGE=${IMAGE_NAME}" \
-    --build-arg dist_location=/installdir \
     -t "${IMAGE_NAME}" \
     -f incremental.Dockerfile \
     --squash --rm
 else
   docker build . \
-    --build-arg "presto_version=${PRESTO_VERSION}" \
-    --build-arg dist_location=/installdir \
+    --build-arg "presto_rpm=${PRESTO_RPM_BASENAME}" \
+    --build-arg "presto_cli=${PRESTO_CLI_BASENAME}" \
+    --build-arg "artifacts_dir=${ARTIFACTS_DIR}" \
     -t "${IMAGE_NAME}" \
     --squash --rm
 fi
